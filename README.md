@@ -1,6 +1,6 @@
 # SiennaOps-Training
 
-1. Start a Julia REPL, by either clicking on the Julia icon in Windows or by typing `julia` and pressing enter in a Mac or Windows Terminal:
+1. Navigate to a new folder and start a Julia REPL, by either clicking on the Julia icon in Windows or by typing `julia` and pressing enter in a Mac or Windows Terminal:
 ```
 $ julia
                _
@@ -15,7 +15,7 @@ $ julia
 julia> 
 ```
 
-2. Navigate to a new folder and setup an environment and output folder:
+2. Setup an environment and output folder:
 ```
 using Pkg 
 Pkg.activate(".") 
@@ -38,6 +38,8 @@ Pkg.add([
     "PowerGraphics",
     "PowerAnalytics",
     "HiGHS",
+    "DataFrames",
+    "CSV",
 ]);
 ```
 
@@ -50,6 +52,7 @@ using PowerGraphics
 using PowerAnalytics
 using DataFrames
 using Dates
+using CSV
 using HiGHS
 ```
 
@@ -205,7 +208,10 @@ get_time_series_array(Deterministic, g, "max_active_power")
 
 ## Save our work!
 
-29. to_json(system, "my_new_RTS_DA_system.json")
+29. We have turned off the renewable generators and updated CT ramp rates. Export the system to json and .h5 files for the time series:
+```
+to_json(system, "my_new_RTS_DA_system.json")
+```
 
 ## Takeaways:
 - Use show_components and get_components to filter for the data or access that you need, without large memory allocations
@@ -229,20 +235,14 @@ solver = optimizer_with_attributes(
     )
 ```
 
-31. Let's start by looking at the system without it's large-scale renewables by turning them
-off:
-```
-for g in get_components(RenewableDispatch, system)
-           set_available!(g, false)
-end
-```
-
-32. Set up a default unit commitment model
+31. Set up a default unit commitment model
 ```
 template = template_unit_commitment()
 ```
 
-33. Apply that template to our data to make a complete model, with both data and equations:
+How to learn more about the different formulations? The Formulation Library: https://nrel-sienna.github.io/PowerSimulations.jl/stable/formulation_library/Introduction/
+
+32. Apply that template to our data to make a complete model, with both data and equations:
 ```
 models = SimulationModels(
     decision_models=[
@@ -253,7 +253,7 @@ models = SimulationModels(
 We just have one model -- the unit commitment model.
 
 
-34. In addition to defining the formulation template, sequential simulations require
+33. In addition to defining the formulation template, sequential simulations require
 definitions for how information flows between problems to set the initial conditions
 of the next problem:
 ```
@@ -263,7 +263,7 @@ DA_sequence = SimulationSequence(
 )
 ```
 
-35. Finally, put together the models and the flow of information between them to simulate
+34. Finally, put together the models and the flow of information between them to simulate
 3 days of a unit commitment:
 ```
 sim = Simulation(
@@ -275,41 +275,41 @@ sim = Simulation(
 )
 ```
 
-36. Build the simulation, which does all the equation preparation before executing:
+35. Build the simulation, which does all the equation preparation before executing:
 ```
 build!(sim, recorders = [:simulation])
 ```
 
-37. Simulate!
+36. Simulate!
 ```
 execute!(sim)
 ```
 
-38. Now, load in the simulation results from the output files:
+37. Now, load in the simulation results from the output files:
 ```
 results = SimulationResults(sim)
 uc_results = get_decision_problem_results(results, "UC")
 ```
 
-39. Let's visualize the results
+38. Let's visualize the results
 ```
 plot_fuel(uc_results);
 ```
 
-40. We can also look at how much it cost to operate the thermal generators at each time step:
+39. We can also look at how much it cost to operate the thermal generators at each time step:
 ```
 costs = read_realized_expressions(uc_results, list_expression_names(uc_results))["ProductionCostExpression__ThermalStandard"]
 ```
 Wind, solar, and hydro have 0 operating cost and do not contribute to total cost in this model
 
-41. We can sum over the set of generators and time-steps to get total production cost for this window
+40. We can sum over the set of generators and time-steps to get total production cost for this window
 ```
 sum(sum(eachcol(costs[!, 2:end])))
 ```
 
 ## Now, let's change some things in the system:
 
-42. Now, let's change how the thermal generators behave by adding in ramping and minimum up
+41. Now, let's change how the thermal generators behave by adding in ramping and minimum up
 and down time constraints:
 ```
 set_device_model!(template, ThermalStandard, ThermalStandardUnitCommitment)
@@ -317,7 +317,7 @@ set_device_model!(template, ThermalStandard, ThermalStandardUnitCommitment)
 You can see the formulations options in the documentation: 
 https://nrel-sienna.github.io/PowerSimulations.jl/stable/formulation_library/ThermalGen/
 
-43. We've changed our template, so we need to re-build the DecisionModels within our simulation, which
+42. We've changed our template, so we need to re-build the DecisionModels within our simulation, which
 includes a copy of the template:
 ```
 models = SimulationModels(
@@ -338,20 +338,20 @@ sim = Simulation(
 )
 ```
 
-44. Now, let's re-build, and execute our simulation:
+43. Now, let's re-build, and execute our simulation:
 ```
 build!(sim, recorders = [:simulation]);
 execute!(sim)
 ```
 
-45. Let's re-extract the results and take a look at the impact on the dispatch stack:
+44. Let's re-extract the results and take a look at the impact on the dispatch stack:
 ```
 results = SimulationResults(sim)
 uc_results = get_decision_problem_results(results, "UC")
 plot_fuel(uc_results);
 ```
 
-46. Finally, let's extract the operating costs again and see the impact on total cost:
+45. Finally, let's extract the operating costs again and see the impact on total cost:
 ```
 costs = read_realized_expressions(uc_results, list_expression_names(uc_results))["ProductionCostExpression__ThermalStandard"]
 sum(sum(eachcol(costs[!, 2:end])))
@@ -359,7 +359,7 @@ sum(sum(eachcol(costs[!, 2:end])))
 
 ## Adding in renewables
 
-47. Now, let's add in those large-scale wind and solar plants by making them
+46. Now, let's add in those large-scale wind and solar plants by making them
 available again:
 ```
 for g in get_components(RenewableDispatch, system)
@@ -367,7 +367,7 @@ for g in get_components(RenewableDispatch, system)
 end
 ```
 
-48. We've changed the data, not the template formulations, so this time we could just re-build and simulate,
+47. We've changed the data, not the template formulations, so this time we could just re-build and simulate,
 but let's redefine our simulation name:
 ```
 sim = Simulation(
@@ -382,15 +382,79 @@ build!(sim, recorders = [:simulation]);
 execute!(sim)
 ```
 
-49. Let's re-extract the results and take a look at the impact on the dispatch stack:
+48. Let's re-extract the results and take a look at the impact on the dispatch stack:
 ```
 results = SimulationResults(sim)
 uc_results = get_decision_problem_results(results, "UC")
 plot_fuel(uc_results);
 ```
 
-50. Finally, let's extract the operating costs again and see the impact on total cost:
+49. Finally, let's extract the operating costs again and see the impact on total cost:
 ```
 costs = read_realized_expressions(uc_results, list_expression_names(uc_results))["ProductionCostExpression__ThermalStandard"]
 sum(sum(eachcol(costs[!, 2:end])))
+```
+
+## Complete our scenario analysis with PowerAnalytics
+
+50. Map to all our results scenarios:
+```
+results_all = create_problem_results_dict(results_dir, "UC"; populate_system=true)
+```
+
+51. Define which time-independent metrics we're interested in: 
+```
+timeless_computations = [PA.calc_sum_objective_value, PA.calc_sum_solve_time, PA.calc_sum_bytes_alloc]
+timeless_names = ["Objective Value", "Solve Time", "Memory Allocated"];
+```
+
+For more, see PowerAnalytics' Built-In Metrics: https://nrel-sienna.github.io/PowerAnalytics.jl/previews/PR43/reference/public/#Built-in-Metrics
+
+52. We'll also make selectors, which help us calculate our metrics across whichever dimensions and/or groupings
+are of interest:
+```
+thermal_standard_selector_sys = make_selector(ThermalStandard; groupby=:all)
+renewable_dispatch_selector_sys = make_selector(RenewableDispatch; groupby=:all)
+```
+
+53.  Let's also calculate some time dependent metrics of performance:
+```
+time_computations = [
+    (PA.calc_total_cost, thermal_standard_selector_sys, "Total Cost (\$)"),
+    (PA.calc_active_power, thermal_standard_selector_sys, "Thermal Generation (MWh)"),
+    (PA.calc_curtailment, renewable_dispatch_selector_sys, "Renewables Curtailment (MWh)"),
+]
+```
+
+54. A few utility functions help us calculate across metrics and scenarios:
+```
+function analyze_one(results)
+    time_series_analytics = compute_all(results, time_computations...)
+    aggregated_time = aggregate_time(time_series_analytics)
+    computed_all = compute_all(results, timeless_computations, nothing, timeless_names)
+    all_time_analytics = hcat(aggregated_time, computed_all)
+    return time_series_analytics, all_time_analytics
+end
+function save_one(output_dir, time_series_analytics, all_time_analytics)
+    CSV.write(joinpath(output_dir, "summary_dataframe_new.csv"), time_series_analytics)
+    CSV.write(joinpath(output_dir, "summary_stats_new.csv"), all_time_analytics)
+end
+function post_processing(all_results) 
+    summaries = []
+    for (scenario_name, results) in pairs(all_results)
+        println("Computing for scenario: ", scenario_name)
+        (time_series_analytics, all_time_analytics) = analyze_one(results)
+        save_one(results.results_output_folder, time_series_analytics, all_time_analytics)
+        push!(summaries, hcat(DataFrame("Scenario" => scenario_name), all_time_analytics))
+    end
+
+    summaries_df = vcat(summaries...)
+    CSV.write("all_scenarios_summary_new.csv", summaries_df)
+    return summaries_df
+end
+```
+
+55. Post-process all scenarios together:
+```
+post_processing(results_all)
 ```
